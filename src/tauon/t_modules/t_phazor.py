@@ -1111,7 +1111,7 @@ def player4(tauon: Tauon) -> None:
 						and not pctl.start_time_target \
 						and not pctl.jump_time \
 						and loaded_track \
-						and 0 < remain < 5.5 \
+						and 0 < remain < 15.5 \
 						and not loaded_track.is_cue \
 						and subcommand != "now":
 
