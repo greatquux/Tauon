@@ -1595,8 +1595,8 @@ class PlayerCtl:
 		# self.album_shuffle_id = ""
 		self.last_playing_time = 0
 		self.multi_playlist = self.bag.multi_playlist
-		self.active_playlist_viewing = self.bag.playlist_active  # the playlist index that is being viewed # TODO(Martin): Rename playlist_active and active_playlist?
-		self.active_playlist_playing = self.bag.playlist_active  # the playlist index that is playing from
+		self.active_playlist_viewing = self.bag.active_playlist_viewing  # the playlist index that is being viewed
+		self.active_playlist_playing = self.bag.active_playlist_playing  # the playlist index that is playing from
 		self.force_queue = self.bag.p_force_queue
 		self.pause_queue: bool = False
 		self.left_time = 0
@@ -5402,6 +5402,7 @@ class Tauon:
 		self.download_directories         = bag.download_directories
 		self.launch_prefix                = bag.launch_prefix
 		self.overlay_texture_texture      = bag.overlay_texture_texture
+		self.use_natsort                  = bag.use_natsort
 		self.de_notify_support            = bag.de_notify_support
 		self.old_window_position          = bag.old_window_position
 		self.cache_directory              = bag.dirs.cache_directory
@@ -6433,10 +6434,11 @@ class Tauon:
 		stations: list[RadioStation] = []
 		for id in ids:
 			if id in urls:
-				radio = RadioPlaylist(
+				radio = RadioStation(
 					stream_url=titles[id] if id in titles else urls[id],
 					title=os.path.splitext(os.path.basename(path))[0],
-					scroll=0)
+					#scroll=0, # TODO(Martin): This was here wrong as scrolling is meant to be for RadioPlaylist?
+					)
 
 				if ".pls" in radio.stream_url:
 					if not followed:
@@ -7320,6 +7322,7 @@ class Tauon:
 				self.prefs.show_lyrics_side = True
 			self.gui.update += 1
 			self.lyrics_ren.lyrics_position = 0
+			self.timed_lyrics_ren.index = -1
 			self.pctl.notify_change()
 		return None
 
@@ -12664,8 +12667,7 @@ class Tauon:
 		if not self.prefs.encoder_output.exists():
 			self.prefs.encoder_output.mkdir()
 		if self.system == "Windows" or self.msys:
-			line = r"explorer " + self.prefs.encoder_output.replace("/", "\\")
-			subprocess.Popen(line)
+			subprocess.Popen(["explorer", self.prefs.encoder_output])
 		elif self.macos:
 			subprocess.Popen(["open", self.prefs.encoder_output])
 		else:
@@ -16296,7 +16298,7 @@ class Tauon:
 			pctl.player_volume,
 			pctl.track_queue,
 			pctl.queue_step,
-			pctl.default_playlist,
+			pctl.default_playlist,  # not read from here (keep to avoid db version bump)
 			None,  # pctl.playlist_playing_position,
 			None,  # Was cue list
 			"",  # radio_field.text,
@@ -16470,6 +16472,7 @@ class Tauon:
 			prefs.row_title_separator_type,
 			prefs.replay_preamp,  # 181
 			prefs.gallery_combine_disc,
+			pctl.active_playlist_playing,  # 183
 		]
 
 		try:
@@ -36124,7 +36127,6 @@ class Bag:
 	xdpi:                    int
 	master_count:            int
 	playing_in_queue:        int
-	playlist_active:         int
 	playlist_playing:        int
 	playlist_view_position:  int
 	radio_playlist_viewing:  int
@@ -36151,6 +36153,8 @@ class Bag:
 	loaded_asset_dc:         dict[str, WhiteModImageAsset | LoadImageAsset]
 	sm:                      CDLL | None = None
 	song_notification:       None = None
+	active_playlist_viewing: int = 0
+	active_playlist_playing: int = 0
 
 @dataclass
 class Formats:
@@ -39370,7 +39374,6 @@ random_mode = False
 repeat_mode = False
 
 default_playlist: list[int] = []
-playlist_active: int = 0
 
 # Library and loader Variables--------------------------------------------------------
 master_library: dict[int, TrackClass] = {}
@@ -39515,7 +39518,6 @@ bag = Bag(
 	flatpak_mode=flatpak_mode,
 	snap_mode=snap_mode,
 	master_count=master_count,
-	playlist_active=playlist_active,
 	playing_in_queue=playing_in_queue,
 	playlist_playing=playlist_playing,
 	playlist_view_position=playlist_view_position,
@@ -39671,21 +39673,23 @@ for t in range(2):
 			master_library = save[0]
 		master_count = save[1]
 		playlist_playing = save[2]
-		playlist_active = save[3]
+		bag.active_playlist_viewing = save[3]
 		playlist_view_position = save[4]
 		if save[5] is not None:
 			if db_version > 68:
 				bag.multi_playlist = []
 				tauonplaylist_jar = save[5]
-				for d in tauonplaylist_jar:
-					nt = TauonPlaylist(**d)
-					bag.multi_playlist.append(nt)
+				for i, d in enumerate(tauonplaylist_jar):
+					p = TauonPlaylist(**d)
+					bag.multi_playlist.append(p)
+					if i == bag.active_playlist_viewing:
+						default_playlist = p.playlist_ids
 			else:
 				bag.multi_playlist = save[5]
 		volume = save[6]
 		track_queue = save[7]
 		playing_in_queue = save[8]
-		default_playlist = save[9]
+		# default_playlist = save[9]  # value is now set above
 		# playlist_playing = save[10]
 		# cue_list = save[11]
 		# radio_field_text = save[12]
@@ -40034,6 +40038,8 @@ for t in range(2):
 			prefs.replay_preamp = save[181]
 		if save[182] is not None:
 			prefs.gallery_combine_disc = save[182]
+		if save[183] is not None:
+			bag.active_playlist_playing = save[183]
 
 		del save
 		break
@@ -41176,8 +41182,8 @@ vis_menu.add(MenuItem(_("Spectrum Visualizer"), tauon.spec_on))
 _("Time")
 _("Filepath")
 
-# set_menu.add(_("Sort Ascending"), tauon.sort_ass, pass_ref=True, disable_test=tauon.view_pl_is_locked, pass_ref_deco=True)
-# set_menu.add(_("Sort Decending"), tauon.sort_dec, pass_ref=True, disable_test=tauon.view_pl_is_locked, pass_ref_deco=True)
+# set_menu.add(MenuItem(_("Sort Ascending"), tauon.sort_ass, pass_ref=True, disable_test=tauon.view_pl_is_locked, pass_ref_deco=True))
+# set_menu.add(MenuItem(_("Sort Decending"), tauon.sort_dec, pass_ref=True, disable_test=tauon.view_pl_is_locked, pass_ref_deco=True))
 # set_menu.br()
 set_menu.add(MenuItem(_("Auto Resize"), tauon.auto_size_columns))
 set_menu.add(MenuItem(_("Hide bar"), tauon.hide_set_bar))
@@ -42550,6 +42556,7 @@ while pctl.running:
 			tauon.exit("Quit keyboard shortcut pressed")
 
 		if keymaps.test("testkey"):  # F7: test
+			#print(pctl.multi_playlist)
 			pass
 
 		if gui.mode < 3:
