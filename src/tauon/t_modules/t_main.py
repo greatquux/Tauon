@@ -202,6 +202,8 @@ if TYPE_CHECKING:
 	from pylast import LastFMNetwork
 	from collections.abc import Callable
 
+CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
+
 class LoadImageAsset:
 	# TODO(Martin): Global class var!
 	assets: list[LoadImageAsset] = []
@@ -15000,10 +15002,10 @@ class Tauon:
 
 		return h
 
-	def reload_albums(self, quiet: bool = False, return_playlist: int = -1, custom_list: list[int] | None = None) -> list[int] | None:
+	def reload_albums(self, quiet: bool = False, return_playlist: int = -1, custom_list: list[int] | None = None) -> list[int]:
 		if self.cm_clean_db:
 			# Doing reload while things are being removed may cause crash
-			return None
+			return []
 
 		dex = []
 		current_folder = ""
@@ -15063,7 +15065,7 @@ class Tauon:
 		# Generate POWER BAR
 		self.gui.power_bar = self.gen_power2()
 		self.gui.pt = 0
-		return None
+		return []
 
 	def reload_backend(self) -> None:
 		self.gui.backend_reloading = True
@@ -17797,6 +17799,10 @@ class Tauon:
 		def install_tray_icon(src: str, name: str) -> None:
 			alt = user_icon_dir / f"{name}.svg"
 			if not alt.is_file() or force:
+				if alt.exists():
+					# Remove file first to avoid PermissionError on distributions like NixOS that use 444 for permissions
+					# See https://github.com/Taiko2k/Tauon/issues/1615
+					alt.unlink()
 				shutil.copy(src, str(alt))
 
 		if not user_icon_dir.is_dir():
@@ -18076,7 +18082,23 @@ class SubsonicService:
 		if binary:
 			return response.content
 
-		d = json.loads(response.text)
+		# Some broken servers can send invalid JSON with control chars - remove them, see https://github.com/Taiko2k/Tauon/issues/1112
+		control_chars = CONTROL_CHAR_RE.findall(response.text)
+		if control_chars:
+			clean_response = CONTROL_CHAR_RE.sub('', response.text)
+			details = [f"U+{ord(c):04X}" for c in control_chars]
+			logging.warning(f"Invalid control characters found in JSON response: {', '.join(details)}")
+		else:
+			clean_response = response.text
+
+		try:
+			d = json.loads(clean_response)
+		except json.decoder.JSONDecodeError:
+			logging.exception(f"Failed to decode subsonic response as json: {clean_response}")
+			return None
+		except Exception:
+			logging.exception(f"Unknown error loading subsonic response: {clean_response}")
+			return None
 		# logging.info(d)
 
 		if d["subsonic-response"]["status"] != "ok":
@@ -18085,8 +18107,14 @@ class SubsonicService:
 
 		return d
 
-	def get_cover(self, track_object: TrackClass):
+	def get_cover(self, track_object: TrackClass) -> BytesIO:
 		response = self.r("getCoverArt", p={"id": track_object.art_url_key}, binary=True)
+		try:
+			response.decode('utf-8')
+			raise ValueError(f"Expected binary data with an image but got a valid string: {response}")
+		except UnicodeDecodeError:
+			pass
+
 		return io.BytesIO(response)
 
 	def resolve_stream(self, key):
@@ -18139,9 +18167,18 @@ class SubsonicService:
 			self.scanning = False
 			return []
 
+		# {'openSubsonic': True, 'serverVersion': '8', 'status': 'failed', 'type': 'lms', 'version': '1.16.0', 'error': {'code': 41, 'message': 'Token authentication not supported for LDAP users.'}}
 		if "indexes" not in a["subsonic-response"]:
+			self.scanning = False
+			if "error" in a["subsonic-response"]:
+				logging.debug(a["subsonic-response"])
+				self.show_message(_("Error connecting to Airsonic server"), f'{a["subsonic-response"]["error"]["code"]}: {a["subsonic-response"]["error"]["message"]}', mode="error")
+				return None
 			logging.critical("Failed to find expected key 'indexes', report a bug with the log below!")
 			logging.critical(a["subsonic-response"])
+			self.show_message(_("Error connecting to Airsonic server"), "See console log for more details", mode="error")
+			return None
+
 		b = a["subsonic-response"]["indexes"]["index"]
 
 		folders: list[tuple[str, str]] = []
@@ -18177,12 +18214,14 @@ class SubsonicService:
 				return
 			except Exception:
 				logging.exception("Unknown Error reading Airsonic directory")
+				return
 
 			items = d["subsonic-response"]["directory"]["child"]
 
 			self.gui.update = 2
 
 			for item in items:
+				#logging.debug(f"song: {item}")
 				if "isDir" in item and item["isDir"]:
 					if "userRating" in item and "artist" in item:
 						rating = item["userRating"]
@@ -18220,7 +18259,7 @@ class SubsonicService:
 					nt.fullpath = song["path"]
 					nt.parent_folder_path = os.path.dirname(song["path"])
 				if "coverArt" in song:
-					nt.art_url_key = song["id"]
+					nt.art_url_key = song["coverArt"]
 				nt.url_key = song["id"]
 				nt.misc["subsonic-folder-id"] = folder_id
 				nt.is_network = True
@@ -19414,7 +19453,7 @@ class TextBox2:
 						break
 
 			# Ctrl + right to move cursor forward a word
-			elif (self.inp.key_ctrl_down or self.inp.key_rctrl_down) and self.inp.key_up_press:
+			elif (self.inp.key_ctrl_down or self.inp.key_rctrl_down) and self.inp.key_right_press:
 				while g2() == " ":
 					self.cursor_position -= 1
 					if not self.inp.key_shift_down:
@@ -19442,7 +19481,7 @@ class TextBox2:
 				self.eliminate_selection()
 
 			# Left and right arrow keys to move cursor
-			if self.inp.key_up_press:
+			if self.inp.key_right_press:
 				if self.cursor_position > 0:
 					self.cursor_position -= 1
 				if not self.inp.key_shift_down and not self.inp.key_shiftr_down:
@@ -19838,7 +19877,7 @@ class TextBox:
 						break
 
 			# Ctrl + right to move cursor forward a word
-			elif (inp.key_ctrl_down or inp.key_rctrl_down) and inp.key_up_press:
+			elif (inp.key_ctrl_down or inp.key_rctrl_down) and inp.key_right_press:
 				while g2() == " ":
 					self.cursor_position -= 1
 					if not inp.key_shift_down:
@@ -19866,7 +19905,7 @@ class TextBox:
 				self.eliminate_selection()
 
 			# Left and right arrow keys to move cursor
-			if inp.key_up_press:
+			if inp.key_right_press:
 				if self.cursor_position > 0:
 					self.cursor_position -= 1
 				if not inp.key_shift_down and not inp.key_shiftr_down:
@@ -31541,11 +31580,11 @@ class PlaylistBox:
 		draw_pin_indicator = False  # self.prefs.tabs_on_top
 
 		# if not gui.album_tab_mode:
-		#     if self.inp.key_left_press or self.inp.key_up_press:
-		#         if pctl.active_playlist_viewing < self.scroll_on:
-		#             self.scroll_on = pctl.active_playlist_viewing
-		#         elif pctl.active_playlist_viewing + 1 > self.scroll_on + max_tabs:
-		#             self.scroll_on = (pctl.active_playlist_viewing - max_tabs) + 1
+		# 	if self.inp.key_left_press or self.inp.key_right_press:
+		# 		if pctl.active_playlist_viewing < self.scroll_on:
+		# 			self.scroll_on = pctl.active_playlist_viewing
+		# 		elif pctl.active_playlist_viewing + 1 > self.scroll_on + max_tabs:
+		# 			self.scroll_on = (pctl.active_playlist_viewing - max_tabs) + 1
 
 		# Process inputs
 		delete_pl = None
@@ -31559,7 +31598,7 @@ class PlaylistBox:
 				continue
 
 			# if not pl.hidden and i in tabs_on_top:
-			#     continue
+			# 	continue
 
 			tab_on += 1
 
@@ -38980,7 +39019,7 @@ download_directory = Path("~").expanduser() / "Downloads"
 install_mode = False
 flatpak_mode = False
 snap_mode = False
-if str(install_directory).startswith(("/opt/", "/usr/", "/app/", "/snap/")):
+if str(install_directory).startswith(("/opt/", "/usr/", "/app/", "/snap/", "/nix/store/")):
 	install_mode = True
 	if str(install_directory)[:6] == "/snap/":
 		snap_mode = True
@@ -45479,7 +45518,7 @@ while pctl.running:
 					#     line = "last.fm loved tracks from user. Format: /love <username>"
 					# else:
 					line = _("Folder filter mode. Enter path segment.")
-					ddt.text((rect[0] + 23 * gui.scale, window_size[1] - 87 * gui.scale), line, (220, 220, 220, 100), 312)
+					ddt.text((rect[0] + 23 * gui.scale, window_size[1] - 87 * gui.scale), line, ColourRGBA(220, 220, 220, 100), 312)
 				else:
 					line = _("UP / DOWN to navigate. SHIFT + RETURN for new playlist.")
 					if len(search_over.search_text.text) == 0:
