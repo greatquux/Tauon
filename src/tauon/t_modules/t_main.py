@@ -195,7 +195,7 @@ try:
 except ModuleNotFoundError:
 	logging.debug("Unable to import colored_traceback, tracebacks will be dull.")
 except Exception:
-	logging.warning("Error trying to import colored_traceback, tracebacks will be dull.")
+	logging.info("Error trying to import colored_traceback, tracebacks will be dull.")
 
 try:
 	from jxlpy import JXLImagePlugin
@@ -350,7 +350,7 @@ class LoadImageAsset:
 			self.path = str(self.dirs.scaled_asset_directory / self.scale_name)
 		self.__init__(bag=self.bag, path=self.path, reload=True, scale_name=self.scale_name)
 
-	def render(self, x: int, y: int, colour: ColourRGBA | None = None) -> None:
+	def render(self, x: float, y: float, colour: ColourRGBA | None = None) -> None:
 		self.rect.x = round(x)
 		self.rect.y = round(y)
 		sdl3.SDL_RenderTexture(self.renderer, self.texture, None, self.rect)
@@ -384,7 +384,7 @@ class WhiteModImageAsset:
 			self.path = str(self.dirs.scaled_asset_directory / self.scale_name)
 		self.__init__(bag=self.bag, path=self.path, reload=True, scale_name=self.scale_name)
 
-	def render(self, x: int, y: int, colour: ColourRGBA) -> None:
+	def render(self, x: float, y: float, colour: ColourRGBA) -> None:
 		if colour != self.colour:
 			sdl3.SDL_SetTextureColorMod(self.texture, colour.r, colour.g, colour.b)
 			sdl3.SDL_SetTextureAlphaMod(self.texture, colour.a)
@@ -662,10 +662,10 @@ class GuiVar:
 		self.rsp = True
 		if self.bag.phone:
 			self.rsp = False
-		self.rspw = round(300 * self.scale)
+		self.rspw: float = round(300 * self.scale)
 		self.lsp = False
-		self.lspw = round(220 * self.scale)
-		self.plw = None
+		self.lspw: float = round(220 * self.scale)
+		self.plw: float | None = None
 
 		self.pref_rspw = 300
 
@@ -1009,10 +1009,10 @@ class StarStore:
 			if value == 0:
 				del tr.misc["FMPS_Rating"]
 
-	def get_by_object(self, track: TrackClass) -> int:
+	def get_by_object(self, track: TrackClass) -> float:
 		return self.db.get(self.object_key(track), StarRecord()).playtime
 
-	def get_total(self) -> int:
+	def get_total(self) -> float:
 		return sum(item.playtime for item in self.db.values())
 
 	def full_get(self, index: int) -> StarRecord | None:
@@ -1279,7 +1279,7 @@ class ColoursClass:
 		self.top_panel_background = self.grey(15)
 		self.status_text_over: ColourRGBA | None = None
 		self.status_text_normal: ColourRGBA | None = None
-		
+
 
 
 		self.side_panel_background = self.grey(18)
@@ -2631,7 +2631,7 @@ class PlayerCtl:
 			if track_id in pool:
 				pool.remove(track_id)
 
-	def play_target_rr(self, play=True) -> None:
+	def play_target_rr(self, play: bool = True) -> None:
 		self.tauon.thread_manager.ready_playback()
 		self.playing_length = self.master_library[self.track_queue[self.queue_step]].length
 
@@ -2663,7 +2663,7 @@ class PlayerCtl:
 
 		self.deduct_shuffle(self.target_object.index)
 
-	def play_target(self, gapless: bool = False, jump: bool = False, play=True) -> None:
+	def play_target(self, gapless: bool = False, jump: bool = False, play: bool = True) -> None:
 		self.tauon.thread_manager.ready_playback()
 
 		#logging.info(self.track_queue)
@@ -4348,7 +4348,7 @@ class ListenBrainz:
 			url += "/"
 		return url + "1/submit-listens"
 
-	def listen_full(self, track_object: TrackClass, time) -> bool:
+	def listen_full(self, track_object: TrackClass, time: int) -> bool:
 		if self.enable is False:
 			return True
 		if self.prefs.scrobble_hold is True:
@@ -4785,7 +4785,7 @@ class Menu:
 		self.request_width: int = width
 		self.close_next_frame = False
 		self.clicked = False
-		self.pos = [0, 0]
+		self.pos: list[float] = [0, 0]
 		self.rescale()
 
 		self.reference: int = 0
@@ -4803,9 +4803,9 @@ class Menu:
 
 		Menu.count += 1
 
-		self.sub_number = 0
-		self.sub_active = -1
-		self.sub_y_postion = 0
+		self.sub_number:    int = 0
+		self.sub_active:    int = -1
+		self.sub_y_postion: int = 0
 		Menu.instances.append(self)
 
 	def deco(self, _=_) -> list[ColourRGBA | None]:
@@ -5633,6 +5633,7 @@ class Tauon:
 		self.core_use: int                        = 0
 		self.dl_use: int                          = 0
 		self.latest_db_version                    = bag.latest_db_version
+		self.g_tc_notify                          = None
 		# Setting various timers
 		self.spot_search_rate_timer       = Timer()
 		self.track_box_path_tool_timer    = Timer()
@@ -5669,7 +5670,6 @@ class Tauon:
 		self.sync_file_update_timer       = Timer(1000)
 		self.restore_ignore_timer         = Timer()
 		self.restore_ignore_timer.force_set(100)
-
 		self.fields = Fields(self)
 		# Create top menu
 		self.x_menu                = Menu(self, 190, show_icons=True)
@@ -6255,20 +6255,19 @@ class Tauon:
 		ddt.rect((0, window_size[1] - 1 * gui.scale, window_size[0], 1 * gui.scale), colour)
 		ddt.rect((window_size[0] - 1 * gui.scale, 0, 1 * gui.scale, window_size[1]), colour)
 
-	def bass_player_thread(self, player) -> None:
-		# logging.basicConfig(filename=user_directory + '/crash.log', level=logging.ERROR,
-		#					 format='%(asctime)s %(levelname)s %(name)s %(message)s')
-
-		try:
-			player(self.pctl, self.gui, self.prefs, self.lfm_scrobbler, self.star_store, self)
-		except Exception:
-			logging.exception("Exception on player thread")
-			self.show_message(_("Playback thread has crashed. Sorry about that."), _("App will need to be restarted."), mode="error")
-			time.sleep(1)
-			self.show_message(_("Playback thread has crashed. Sorry about that."), _("App will need to be restarted."), mode="error")
-			time.sleep(1)
-			self.show_message(_("Playback thread has crashed. Sorry about that."), _("App will need to be restarted."), mode="error")
-			raise
+	#def bass_player_thread(self, player) -> None:
+	#	# logging.basicConfig(filename=user_directory + '/crash.log', level=logging.ERROR,
+	#	#					 format='%(asctime)s %(levelname)s %(name)s %(message)s')
+	#	try:
+	#		player(self.pctl, self.gui, self.prefs, self.lfm_scrobbler, self.star_store, self)
+	#	except Exception:
+	#		logging.exception("Exception on player thread")
+	#		self.show_message(_("Playback thread has crashed. Sorry about that."), _("App will need to be restarted."), mode="error")
+	#		time.sleep(1)
+	#		self.show_message(_("Playback thread has crashed. Sorry about that."), _("App will need to be restarted."), mode="error")
+	#		time.sleep(1)
+	#		self.show_message(_("Playback thread has crashed. Sorry about that."), _("App will need to be restarted."), mode="error")
+	#		raise
 
 	def prime_fonts(self) -> None:
 		standard_font = self.prefs.linux_font
@@ -11945,7 +11944,7 @@ class Tauon:
 	# 		colour = self.colours.menu_text_disabled
 	# 	return [self.colour, self.colours.menu_background, line]
 
-	def art_metadata_overlay(self, right, bottom, showc) -> None:
+	def art_metadata_overlay(self, right, bottom, showc: list[tuple[str, int, int, int, str]]) -> None:
 		if not showc:
 			return
 
@@ -12162,6 +12161,7 @@ class Tauon:
 			item.reload()
 		for menu in Menu.instances:
 			menu.rescale()
+
 		self.bottom_bar1.__init__(self)
 		self.bottom_bar_ao1.__init__(self)
 		self.top_panel.__init__(self)
@@ -12725,9 +12725,9 @@ class Tauon:
 		if not self.pctl.multi_playlist[target_pl].playlist_ids:
 			return
 
-		albums = []
-		artists = []
-		parents = []
+		albums:  list[str] = []
+		artists: list[str] = []
+		parents: list[str] = []
 
 		track = None
 
@@ -14524,7 +14524,7 @@ class Tauon:
 
 		out_line = encode_track_name(t)
 
-		target_out = str(output / f"output{track}.{codec})")
+		target_out = str(output / f"output{track}.{codec}")
 
 		command = self.get_ffmpeg() + " "
 
@@ -19209,7 +19209,7 @@ class LyricsRenMini:
 
 	def generate(self, index, w) -> None:
 		self.text = ""
-		
+
 		# LRC formatting search & destroy
 		for line in self.pctl.master_library[index].lyrics.split("\n"):
 			if len(line) < 10 or ( line[0] != "[" or line[9] != "]" and ":" not in line ) or "." not in line:
@@ -19261,7 +19261,7 @@ class LyricsRen:
 	def render(self, x, y, w, h, p) -> None:
 		colour = self.colours.lyrics
 		bg = self.colours.playlist_panel_background
-		
+
 		#colour = self.colours.grey(40)
 		# if test_lumi(self.colours.lyrics_panel_background) < 0.5:
 		#	colour = self.colours.grey(40)
@@ -19432,7 +19432,7 @@ class TimedLyricsRen:
 		for i, line in enumerate(self.data):
 			if 0 < yy < self.window_size[1]:
 				colour = self.colours.lyrics
-				
+
 				#colour = self.colours.grey(70)
 				#if test_lumi(self.colours.gallery_background) < 0.5:
 				#	colour = self.colours.grey(40)
@@ -26496,7 +26496,9 @@ class TopPanel:
 					tauon.playlist_box.drag = False
 					if prefs.drag_to_unpin:
 						if tauon.playlist_box.drag_source == 0:
-							pctl.multi_playlist[tauon.playlist_box.drag_on].hidden = True
+							pass
+							# Disabled drag to unpin feature
+							#pctl.multi_playlist[tauon.playlist_box.drag_on].hidden = True
 						else:
 							pctl.multi_playlist[tauon.playlist_box.drag_on].hidden = False
 					gui.update += 1
@@ -30260,7 +30262,7 @@ class ArtBox:
 		self.fields  = tauon.fields
 		self.colours = tauon.colours
 
-	def draw(self, x, y, w, h, target_track=None, tight_border=False, default_border=None) -> None:
+	def draw(self, x: int, y: int, w: int, h: int, target_track: TrackClass | None = None, tight_border: bool = False, default_border: tuple[int, int, int, int] | None = None) -> None:
 		tauon   = self.tauon
 		ddt     = self.ddt
 		colours = self.colours
@@ -32137,52 +32139,17 @@ class ArtistList:
 			return
 
 		if self.to_fetch:
-			if self.tauon.get_lfm_wait_timer.get() < 2:
+			if self.tauon.get_lfm_wait_timer.get() < 6:
 				return
 
 			artist = self.to_fetch
 			f_artist = filename_safe(artist)
-			filename = f_artist + "-lfm.png"
-			filename2 = f_artist + "-lfm.txt"
-			filename3 = f_artist + "-ftv.jpg"
-			filename4 = f_artist + "-dcg.jpg"
-			filepath = os.path.join(self.a_cache_directory, filename)
-			filepath2 = os.path.join(self.a_cache_directory, filename2)
-			filepath3 = os.path.join(self.a_cache_directory, filename3)
-			filepath4 = os.path.join(self.a_cache_directory, filename4)
-			got_image = False
-			try:
-				# Lookup artist info on last.fm
-				logging.info("lastfm lookup artist: " + artist)
-				mbid = self.lastfm.artist_mbid(artist)
-				self.tauon.get_lfm_wait_timer.set()
-				# if data[0] is not False:
-				#     #cover_link = data[2]
-				#     text = data[1]
-				#
-				#     if not os.path.exists(filepath2):
-				#         f = open(filepath2, 'w', encoding='utf-8')
-				#         f.write(text)
-				#         f.close()
 
-				if mbid and self.prefs.enable_fanart_artist:
-					self.tauon.save_fanart_artist_thumb(mbid, filepath3, preview=True)
-					got_image = True
-
-			except Exception:
-				logging.exception("Failed to find image from fanart.tv")
-
-			if not got_image and self.tauon.verify_discogs():
-				try:
-					self.tauon.save_discogs_artist_thumb(artist, filepath4)
-				except Exception:
-					logging.exception("Failed to find image from discogs")
-
-			if os.path.exists(filepath3) or os.path.exists(filepath4):
-				self.gui.update += 1
-			elif artist not in self.prefs.failed_artists:
-				logging.error("Failed fetching: " + artist)
-				self.prefs.failed_artists.append(artist)
+			self.tauon.artist_info_box.get_data(artist, silent=True)
+			if not self.tauon.artist_info_box.get_data(artist, get_img_path=True):
+				if artist not in self.prefs.failed_artists:
+					logging.error("Failed fetching: " + artist)
+					self.prefs.failed_artists.append(artist)
 
 			self.to_fetch = ""
 
@@ -34316,7 +34283,7 @@ class PictureRender:
 		logging.info("Save BMP to memory")
 		self.size = im.size[0], im.size[1]
 
-	def draw(self, x, y) -> None:
+	def draw(self, x: int, y: int) -> None:
 		if self.show is False:
 			return
 
@@ -34554,11 +34521,11 @@ class ArtistInfoBox:
 		else:
 			self.ddt.text((x + w // 2, y + h // 2 - 7 * self.gui.scale, 2), self.status, ColourRGBA(255, 255, 255, 60), 313, bg=background)
 
-	def get_data(self, artist: str, get_img_path: bool = False, force_dl: bool = False) -> str | None:
+	def get_data(self, artist: str, get_img_path: bool = False, force_dl: bool = False, silent: bool = False) -> str | None:
 		if not get_img_path:
 			logging.info("Load Bio Data")
 
-		if artist is None and not get_img_path:
+		if not silent and artist is None and not get_img_path:
 			self.artist_on = artist
 			self.lock = False
 			return ""
@@ -34590,10 +34557,9 @@ class ArtistInfoBox:
 			return ""
 
 		# Check for cache
-		box_size = (
-		round(self.gui.artist_panel_height - 20 * self.gui.scale) * 2, round(self.gui.artist_panel_height - 20 * self.gui.scale))
+		box_size = (round(self.gui.artist_panel_height - 20 * self.gui.scale) * 2, round(self.gui.artist_panel_height - 20 * self.gui.scale))
 		try:
-			if os.path.isfile(text_filepath):
+			if not silent and os.path.isfile(text_filepath):
 				logging.info("Load cached bio and image")
 
 				self.artist_picture_render.show = False
@@ -34614,7 +34580,7 @@ class ArtistInfoBox:
 
 				return ""
 
-			if not force_dl and not self.prefs.auto_dl_artist_data:
+			if not silent and not force_dl and not self.prefs.auto_dl_artist_data:
 				# . Alt: No artist data has been downloaded (try imply this needs to be manually triggered)
 				self.status = _("No artist data downloaded")
 				self.artist_on = artist
@@ -34624,43 +34590,51 @@ class ArtistInfoBox:
 
 			# Get new from last.fm
 			# . Alt: Looking up artist data
-			self.status = _("Looking up...")
-			self.gui.update += 1
+			if not silent:
+				self.status = _("Looking up...")
+				self.gui.update += 1
+				self.text = ""
+
 			data = self.tauon.lastfm.artist_info(artist)
-			self.text = ""
+			text = ""
+
 			if data[0] is False:
-				self.artist_picture_render.show = False
-				self.status = _("No artist bio found")
-				self.artist_on = artist
-				self.lock = False
+				if not silent:
+					self.artist_picture_render.show = False
+					self.status = _("No artist bio found")
+					self.artist_on = artist
+					self.lock = False
 				return None
 			if data[1]:
-				self.text = data[1]
+				text = data[1]
+				if not silent:
+					self.text = text
 			# cover_link = data[2]
 			# Save text as file
 			f = open(text_filepath, "w", encoding="utf-8")
-			f.write(self.text)
+			f.write(text)
 			f.close()
 			logging.info("Save bio text")
 
-			self.artist_picture_render.show = False
+			if not silent:
+				self.artist_picture_render.show = False
+
+			got_image_path = ""
 			if data[3] and self.prefs.enable_fanart_artist:
 				try:
 					self.tauon.save_fanart_artist_thumb(data[3], img_filepath)
-					self.artist_picture_render.load(img_filepath, box_size)
-
-					self.artist_picture_render.show = True
+					got_image_path = img_filepath
 				except Exception:
 					logging.exception("Failed to find image from fanart.tv")
-			if not self.artist_picture_render.show and self.tauon.verify_discogs():
+
+			if not got_image_path and self.tauon.verify_discogs():
 				try:
 					self.tauon.save_discogs_artist_thumb(artist, img_filepath_dcg)
-					self.artist_picture_render.load(img_filepath_dcg, box_size)
-
-					self.artist_picture_render.show = True
+					got_image_path = img_filepath_dcg
 				except Exception:
 					logging.exception("Failed to find image from discogs")
-			if not self.artist_picture_render.show and data[4]:
+
+			if not got_image_path and data[4]:
 				try:
 					r = requests.get(data[4], timeout=10)
 					html = BeautifulSoup(r.text, "html.parser")
@@ -34671,11 +34645,16 @@ class ArtistInfoBox:
 						assert len(r.content) > 1000
 						with open(standard_path, "wb") as f:
 							f.write(r.content)
-						self.artist_picture_render.load(standard_path, box_size)
-						self.artist_picture_render.show = True
+						got_image_path = standard_path
+
 				except Exception:
 					logging.exception("Failed to scrape art")
 
+			if not silent and got_image_path:
+				self.artist_picture_render.load(got_image_path, box_size)
+				self.artist_picture_render.show = True
+			if silent:
+				return
 			# Trigger reload of thumbnail in artist list box
 			for key, value in list(self.tauon.artist_list_box.thumb_cache.items()):
 				if key is None and key == artist:
@@ -36293,7 +36272,6 @@ class Bag:
 	launch_prefix:           str
 	platform_system:         str
 	album_mode_art_size:     int
-	xdpi:                    int
 	master_count:            int
 	playing_in_queue:        int
 	playlist_playing:        int
@@ -37877,7 +37855,7 @@ def worker2(tauon: Tauon) -> None:
 									temp_results.append([7, year, track, playlist.uuid_int, 0])
 									years[year] = 1000
 
-						if search_magic(s_text, title + artist + filename + album + sartist + album_artist):
+						if search_magic(s_text, title + " " + artist + " " + filename + " " + album + " " +  sartist + " " + album_artist):
 							if "artists" in t.misc and t.misc["artists"]:
 								for a in t.misc["artists"]:
 									if search_magic(s_text, a.lower()):
@@ -39053,7 +39031,6 @@ def main(holder: Holder) -> None:
 	draw_min_button = True
 	draw_max_button = True
 	left_window_control = False
-	xdpi = 0
 
 	detect_macstyle = False
 	gtk_settings: Gtk.Settings | None = None
@@ -39066,7 +39043,6 @@ def main(holder: Holder) -> None:
 		from gi.repository import Gtk
 
 		gtk_settings = Gtk.Settings().get_default()
-		xdpi = gtk_settings.get_property("gtk-xft-dpi") / 1024
 		if "minimize" not in str(gtk_settings.get_property("gtk-decoration-layout")):
 			draw_min_button = False
 		if "maximize" not in str(gtk_settings.get_property("gtk-decoration-layout")):
@@ -39581,7 +39557,6 @@ def main(holder: Holder) -> None:
 		phone=phone,
 		should_save_state=True,
 		old_window_position=old_window_position,
-		xdpi=xdpi,
 		desktop=desktop,
 		platform_system=platform_system,
 		last_fm_enable=last_fm_enable,
@@ -40366,13 +40341,13 @@ def main(holder: Holder) -> None:
 	if system == "Linux" and not macos and not tauon.msys:
 		try:
 			Notify.init("Tauon Music Box")
-			g_tc_notify = Notify.Notification.new(
+			tauon.g_tc_notify = Notify.Notification.new(
 				"Tauon Music Box",
 				"Transcoding has finished.")
 			value = GLib.Variant("s", t_id)
-			g_tc_notify.set_hint("desktop-entry", value)
+			tauon.g_tc_notify.set_hint("desktop-entry", value)
 
-			g_tc_notify.add_action(
+			tauon.g_tc_notify.add_action(
 				"action_click",
 				"Open Output Folder",
 				tauon.g_open_encode_out,
@@ -42511,6 +42486,8 @@ def main(holder: Holder) -> None:
 
 			if keymaps.test("testkey"):  # F7: test
 				#print(pctl.multi_playlist)
+				from watchpoints import watch
+				watch(pctl.multi_playlist[0].hidden)
 				pass
 
 			if gui.mode < 3:
@@ -46561,7 +46538,7 @@ def main(holder: Holder) -> None:
 	elif tauon.de_notify_support:
 		try:
 			tauon.song_notification.close()
-			g_tc_notify.close()
+			tauon.g_tc_notify.close()
 			Notify.uninit()
 		except Exception:
 			logging.exception("uninit notification error")
