@@ -567,16 +567,21 @@ def database_migrate(
 					stations=stations))
 		radio_playlists = new_radio_playlists
 
-	if db_version <= 70:
-		logging.info("Updating database to version 71")
+	if db_version <= 71: # This migration used both 71 and 72
+		logging.info("Updating database to version 72")
 		logging.info("Creating a backup Star database star.p.bak71")
 		import pickle
-		with (user_directory / "star.p.bak71").open("wb") as file:
-			pickle.dump(tauon.star_store.db, file, protocol=pickle.HIGHEST_PROTOCOL)
+		backup_star_db = (user_directory / "star.p.bak71")
+		if not backup_star_db.exists():
+			with backup_star_db.open("wb") as file:
+				pickle.dump(tauon.star_store.db, file, protocol=pickle.HIGHEST_PROTOCOL)
 
 		new_starstore_db: dict[tuple[str, str, str], StarRecord] = {}
 		old_record: list[int | str] = [] # Here just for typing
 		for key, old_record in star_store.db.items():
+			if isinstance(old_record, StarRecord):
+				logging.warning("Record {old_record} was already a StarRecord, likely half-failed earlier migration, skipping this migration over…")
+				break
 			new_record = StarRecord()
 			new_record.playtime = old_record[0]
 			new_record.loved = "L" in old_record[1]
@@ -585,7 +590,10 @@ def database_migrate(
 			if len(old_record) == 4:
 				new_record.loved_timestamp = old_record[3]
 			new_starstore_db[key] = new_record
-
-		star_store.db = new_starstore_db
+		else:
+			star_store.db = new_starstore_db
+			logging.info("Saving newly migrated StarStore db…")
+			with (user_directory / "star.p").open("wb") as file:
+				pickle.dump(tauon.star_store.db, file, protocol=pickle.HIGHEST_PROTOCOL)
 
 	return master_library, multi_playlist, star_store, p_force_queue, theme, prefs, gui, gen_codes, radio_playlists

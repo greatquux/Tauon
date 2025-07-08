@@ -2,7 +2,23 @@
 Changelog
 ---------
 
+### v8.1.3
+
+ - **Added** Playlist auto import feature (Thanks @rexendevar)
+ - **Fixed** Jittery scolling in some views (Thanks @rexendevar)
+ - **Fixed** Version migrations not saving properly and causing crashes
+
+### v8.1.2
+
+ - **Hotfix** Fix 8.1.0 regression preventing loading saved radio stations
+
+### v8.1.1
+
+ - **Hotfix** Fixed possible crash on start
+ - **Added** Column toggle funtctionality to column menu. (Thanks @rexendevar)
+
 ### v8.1.0
+
  - **Added** optional theme colours for "lyrics text", "active lyric" (in synced mode) and "lyrics panel"
  - **Fixed** Spotify redirect URI to address an upstream deprecation
  - **Fixed** synced lyrics rendering issue (again)
@@ -19,7 +35,7 @@ Changelog
  - **Tweaked** Behavior of artist list background download
  - **Removed** Album title separator setting
  - **Removed** Drag to unpin playlist tab feature
- 
+
 ### v8.0.1
 
  - **Fixed** crash on queue scroll
@@ -41,7 +57,7 @@ Changelog
  - **Tweaked** Theme Ash colours
  - **Tweaked** Developer radio pics to be non-hidden
  - **Restored** guitar chords, including support for new guitarchords.com API
- 
+
 
 ### v7.9.0
 
